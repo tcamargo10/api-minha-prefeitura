@@ -1,63 +1,103 @@
 # Deploy no Render.com
 
-## Configuração Necessária
+## Configuração Atual
 
-### 1. Variáveis de Ambiente
+O projeto está configurado para ser deployado no Render.com com as seguintes configurações:
 
-Configure as seguintes variáveis de ambiente no Render.com:
+### Build Command
+```bash
+npm run build:render
+```
 
-- `DATABASE_URL`: URL da conexão com o banco PostgreSQL
-- `JWT_SECRET`: Chave secreta para JWT (mínimo 32 caracteres)
-- `NODE_ENV`: production
+### Start Command
+```bash
+node dist/index.js
+```
 
-### 2. Build Command
+### Variáveis de Ambiente Necessárias
 
-O build command configurado é: `npm run build`
+1. **DATABASE_URL**: URL de conexão com o banco PostgreSQL
+   - Formato: `postgresql://username:password@host:port/database`
+   - Exemplo: `postgresql://user:pass@localhost:5432/minha_prefeitura`
 
-Este comando:
-1. Instala as dependências
-2. Gera o cliente Prisma
-3. Compila o TypeScript para JavaScript
-4. Verifica se o build foi bem-sucedido
+2. **JWT_SECRET**: Chave secreta para assinatura de tokens JWT
+   - Deve ser uma string longa e aleatória
+   - Exemplo: `sua-chave-secreta-muito-longa-aqui`
 
-### 3. Start Command
+3. **NODE_ENV**: Ambiente de execução
+   - Valor: `production`
 
-O start command configurado é: `npm start`
+## Processo de Build
 
-Este comando executa: `node dist/index.js`
+O script `build:render` executa os seguintes passos:
 
-### 4. Estrutura de Arquivos
+1. **npm ci**: Instala dependências de forma limpa
+2. **npx prisma generate**: Gera o cliente Prisma
+3. **npx tsc**: Compila o TypeScript para JavaScript
 
-Após o build, a estrutura deve ser:
+## Estrutura Esperada Após Build
+
+Após o build bem-sucedido, a seguinte estrutura deve existir:
+
 ```
 dist/
-├── index.js
-├── routes/
-├── middleware/
-├── schemas/
-└── ...
+├── index.js          # Arquivo principal
+├── index.d.ts        # Definições TypeScript
+├── routes/           # Rotas compiladas
+├── middleware/       # Middlewares compilados
+└── schemas/          # Schemas compilados
 ```
 
-### 5. Troubleshooting
+## Troubleshooting
 
-Se o deploy falhar:
+### Erro: "Cannot find module '/opt/render/project/src/dist/index.js'"
 
-1. Verifique se a variável `DATABASE_URL` está configurada corretamente
+**Causa**: O build não foi executado corretamente ou o TypeScript não foi compilado.
+
+**Solução**:
+1. Verifique se o comando de build está sendo executado
+2. Confirme que o arquivo `dist/index.js` existe após o build
+3. Verifique os logs do build no Render.com
+
+### Erro de Permissão no Prisma
+
+**Causa**: Problemas de permissão ao gerar o cliente Prisma.
+
+**Solução**:
+1. Use `npm ci` em vez de `npm install`
+2. Execute `npx prisma generate` explicitamente
+3. Verifique se o DATABASE_URL está configurado
+
+### Erro de Conexão com Banco
+
+**Causa**: DATABASE_URL não configurado ou banco inacessível.
+
+**Solução**:
+1. Configure a variável DATABASE_URL no Render.com
 2. Verifique se o banco PostgreSQL está acessível
-3. Verifique os logs do build para identificar erros de compilação
-4. Certifique-se de que todas as dependências estão no `package.json`
+3. Confirme se as credenciais estão corretas
 
-### 6. Logs Úteis
+## Logs Úteis
 
-Para verificar se o build foi bem-sucedido, procure por:
+Para verificar se o build foi bem-sucedido, procure por estas mensagens nos logs:
+
 ```
+✔ Generated Prisma Client
+TypeScript compilation successful
 Build completed successfully!
-Generated files:
 ```
 
-### 7. Banco de Dados
+## Comandos de Debug
 
-Certifique-se de que:
-- O banco PostgreSQL está criado
-- As migrações foram executadas
-- A URL de conexão está correta
+Se precisar debugar localmente:
+
+```bash
+# Testar build local
+npm run build:render
+
+# Verificar se dist/index.js existe
+ls -la dist/
+
+# Testar execução local
+node dist/index.js
+```

@@ -5,6 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { PrismaClient } from "@prisma/client";
+import config from "./config";
 
 // Import routes
 import { userRoutes } from "./routes/user";
@@ -18,8 +19,8 @@ const prisma = new PrismaClient();
 
 const fastify = Fastify({
   logger: {
-    level: "info",
-    transport: process.env.NODE_ENV === "production" ? undefined : {
+    level: config.logLevel,
+    transport: config.isProduction ? undefined : {
       target: "pino-pretty",
       options: {
         colorize: true,
@@ -132,14 +133,11 @@ process.on("SIGINT", gracefulShutdown);
 // Start server
 const start = async () => {
   try {
-    const port = process.env.PORT || 3000;
-    const host = "0.0.0.0";
+    await fastify.listen({ port: Number(config.port), host: config.host });
 
-    await fastify.listen({ port: Number(port), host });
-
-    fastify.log.info(`Server is running on http://localhost:${port}`);
+    fastify.log.info(`Server is running on http://${config.host}:${config.port}`);
     fastify.log.info(
-      `Documentation available at http://localhost:${port}/documentation`
+      `Documentation available at http://${config.host}:${config.port}/documentation`
     );
   } catch (err) {
     fastify.log.error(err);
