@@ -1,0 +1,384 @@
+// ----------------------
+// PRISMA SCHEMA (Postgres)
+// ----------------------
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Enums
+enum Plan {
+  FREE
+  COMPLETE
+}
+
+enum PopulationBand {
+  UP_TO_50K
+  FROM_50K_TO_100K
+  ABOVE_100K
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN       // administrador da prefeitura (tenant)
+  MANAGER     // gestor de secretaria
+  AGENT       // atendente/servidor
+  CITIZEN     // cidadão (pode abrir tickets via mobile)
+}
+
+enum ServiceType {
+  INFO
+  FORM
+  BOOKING
+}
+
+enum TicketStatus {
+  RECEIVED
+  UNDER_ANALYSIS
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum PaymentType {
+  IPTU
+  TAX        // taxas, alvarás, licenças
+  FINE       // multas
+  OTHER
+}
+
+enum PaymentMethod {
+  PIX
+  CARD
+  BOLETO
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  LOGIN
+  EXPORT
+}
+
+/// Tabelas básicas de multi-tenant
+model Tenant {
+  id              String          @id @default(cuid())
+  name            String
+  slug            String          @unique
+  plan            Plan            @default(FREE)
+  populationBand  PopulationBand  @default(UP_TO_50K)
+  brandingJson    Json?           // {logo, primaryColor, namePublic}
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  departments     Department[]
+  categories      Category[]
+  services        Service[]
+  tickets         Ticket[]
+  attachments     Attachment[]
+  payments        Payment[]
+  auditLogs       AuditLog[]
+
+  // Relacionamentos de usuários ligados ao tenant
+  userTenantRoles UserTenantRole[]
+
+  @@index([plan])
+}
+
+/// Secretaria/Departamento da prefeitura
+model Department {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  services  Service[]
+  tickets   Ticket[]
+
+  @@unique([tenantId, name]) // evita nomes repetidos por cidade
+  @@index([tenantId])
+}
+
+/// Usuário (servidor/cidadão/superadmin) — dados sensíveis em tabela separada
+model User {
+  id            String           @id @default(cuid())
+  cpf       String           // Hash do CPF (armazenar versionado/sal)
+  passwordHash  String
+  email         String?
+  phone         String?
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  pii           UserPII?
+  roles         UserTenantRole[]
+  tickets       Ticket[]         @relation("CitizenTickets")
+  statusChanges TicketStatusHistory[] @relation("ActorStatusChanges")
+  auditLogs     AuditLog[]
+  reservations  BookingReservation[]
+  payments      Payment[]
+
+  @@index([cpf])
+  @@unique([email]) // opcional; remova se não quiser obrigatoriedade de e-mail único global
+}
+
+/// Tabela separada para PII (CPF claro, etc.) — proteger com RLS no Postgres
+model UserPII {
+  userId   String  @id
+  cpf      String  @unique  // CPF em claro (se optar por gravar)
+  name     String
+  address  String?
+  city     String?
+  state    String?
+  zip      String?
+
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Ligação Usuário ↔ Tenant com papel (RBAC multi-tenant)
+model UserTenantRole {
+  id       String @id @default(cuid())
+  userId   String
+  tenantId String
+  role     Role
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId, role])
+  @@index([tenantId, role])
+}
+
+/// Categoria de serviços (ex.: Zeladoria, Iluminação etc.)
+model Category {
+  id         String  @id @default(cuid())
+  tenantId   String
+  name       String
+  icon       String? // nome do ícone (lib)
+  color      String? // hex
+  position   Int     @default(0)
+  isFeatured Boolean @default(false)
+  isActive   Boolean @default(true)
+
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  services   Service[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, position])
+}
+
+/// Serviço criado dentro de uma categoria — 3 tipos: INFO, FORM, BOOKING
+model Service {
+  id           String      @id @default(cuid())
+  tenantId     String
+  categoryId   String
+  departmentId String?
+  type         ServiceType
+  title        String
+  summary      String?
+  coverImage   String?
+  slug         String
+  position     Int         @default(0)
+  isFeatured   Boolean     @default(false)
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category     Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  department   Department? @relation(fields: [departmentId], references: [id])
+  info         ServiceContent?
+  form         ServiceForm?
+  booking      ServiceBooking?
+  tickets      Ticket[]
+  bookingSlots BookingSlot[]
+  payments     Payment[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, categoryId, type, isActive])
+  @@index([departmentId])
+}
+
+/// Conteúdo rico para serviços do tipo INFO
+model ServiceContent {
+  serviceId   String  @id
+  content     Json    // rich text JSON/Markdown serializado
+  media       Json?   // [{url, alt}], opcional
+  attachments Json?   // [{url, name, mimeType}]
+
+  service     Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+/// Esquema dinâmico para serviços do tipo FORM
+model ServiceForm {
+  serviceId      String  @id
+  schema         Json    // definição de campos do formulário (builder)
+  rules          Json?   // validações/condições
+  maxAttachments Int?    // limite de anexos
+  acceptTypes    String[] @db.Text
+
+  service        Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+/// Configuração de agendamento para serviços BOOKING
+model ServiceBooking {
+  serviceId       String  @id
+  rules           Json?   // políticas (antecedência, cancelamento)
+  slotDurationMin Int     // duração do slot (minutos)
+  capacityPerSlot Int     // capacidade por slot
+  timezone        String
+
+  service         Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+}
+
+/// Slots/Agenda para BOOKING
+model BookingSlot {
+  id         String   @id @default(cuid())
+  serviceId  String
+  startAt    DateTime
+  endAt      DateTime
+  capacity   Int      @default(1)
+  reserved   Int      @default(0)
+
+  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  reservations BookingReservation[]
+
+  @@index([serviceId, startAt])
+  @@unique([serviceId, startAt, endAt])
+}
+
+/// Reserva de um slot (normalmente haverá também um Ticket vinculado)
+model BookingReservation {
+  id          String      @id @default(cuid())
+  slotId      String
+  ticketId    String?     // se a reserva gerar/ligar a um ticket
+  citizenId   String?     // user (cidadão)
+  createdAt   DateTime    @default(now())
+
+  slot        BookingSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  ticket      Ticket?     @relation(fields: [ticketId], references: [id])
+  citizen     User?       @relation(fields: [citizenId], references: [id])
+
+  @@index([slotId])
+  @@index([citizenId])
+  @@unique([ticketId])
+}
+
+/// Ticket (solicitação do cidadão ou submissão de formulário)
+model Ticket {
+  id            String       @id @default(cuid())
+  tenantId      String
+  serviceId     String
+  departmentId  String?
+  citizenId     String?      // User com papel CITIZEN
+  payload       Json?        // dados do formulário
+  geo           Json?        // GeoJSON (lat/lng) se aplicável
+  status        TicketStatus @default(RECEIVED)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  tenant        Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service       Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  department    Department?  @relation(fields: [departmentId], references: [id])
+  citizen       User?        @relation("CitizenTickets", fields: [citizenId], references: [id])
+  history       TicketStatusHistory[]
+  attachments   Attachment[]
+  reservation   BookingReservation?
+  payments      Payment[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([serviceId])
+  @@index([departmentId])
+}
+
+/// Histórico de status do ticket
+model TicketStatusHistory {
+  id        String       @id @default(cuid())
+  ticketId  String
+  from      TicketStatus?
+  to        TicketStatus
+  byUserId  String?
+  at        DateTime     @default(now())
+
+  ticket    Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor     User?        @relation("ActorStatusChanges", fields: [byUserId], references: [id])
+
+  @@index([ticketId, at])
+}
+
+/// Uploads anexados aos tickets (fotos, vídeos, docs)
+model Attachment {
+  id        String   @id @default(cuid())
+  tenantId  String
+  ticketId  String?
+  url       String
+  mimeType  String?
+  sizeBytes Int?
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id])
+
+  @@index([tenantId])
+  @@index([ticketId])
+}
+
+/// Pagamentos (IPTU, taxas, multas) — habilitado só no plano COMPLETE
+model Payment {
+  id         String         @id @default(cuid())
+  tenantId   String
+  serviceId  String?
+  ticketId   String?
+  citizenId  String?
+  type       PaymentType
+  method     PaymentMethod
+  status     PaymentStatus  @default(PENDING)
+  amount     Decimal        @db.Decimal(12, 2)
+  gatewayId  String?        // id no provedor (chargeId / transactionId)
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+  paidAt     DateTime?
+
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service    Service?       @relation(fields: [serviceId], references: [id])
+  ticket     Ticket?        @relation(fields: [ticketId], references: [id])
+  citizen    User?          @relation(fields: [citizenId], references: [id])
+
+  @@index([tenantId, status, createdAt])
+  @@index([ticketId])
+  @@index([serviceId])
+}
+
+/// Auditoria geral (LGPD, exportações, etc.)
+model AuditLog {
+  id         String      @id @default(cuid())
+  tenantId   String?
+  userId     String?
+  entity     String
+  entityId   String
+  action     AuditAction
+  diff       Json?
+  at         DateTime    @default(now())
+
+  tenant     Tenant?     @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, action, at])
+}
