@@ -7,13 +7,22 @@ echo "Starting build process..."
 echo "Installing dependencies..."
 npm install
 
-# Gerar cliente Prisma
+# Gerar cliente Prisma (com tratamento de erro)
 echo "Generating Prisma client..."
-npx prisma generate
+if npx prisma generate; then
+    echo "Prisma client generated successfully"
+else
+    echo "Warning: Prisma client generation failed, continuing with build..."
+fi
 
 # Compilar TypeScript
 echo "Compiling TypeScript..."
-npx tsc
+if npx tsc; then
+    echo "TypeScript compilation successful"
+else
+    echo "TypeScript compilation failed"
+    exit 1
+fi
 
 # Verificar se o build foi bem-sucedido
 if [ -f "dist/index.js" ]; then

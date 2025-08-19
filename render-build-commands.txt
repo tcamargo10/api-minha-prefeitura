@@ -1,0 +1,32 @@
+# Comandos de Build para Render.com
+
+## Build Command (no painel do Render.com):
+```
+npm install && npm run build:with-prisma
+```
+
+## Start Command (no painel do Render.com):
+```
+npm start
+```
+
+## Variáveis de Ambiente Necessárias:
+- DATABASE_URL: postgresql://username:password@host:port/database
+- JWT_SECRET: sua-chave-secreta-jwt-aqui
+- NODE_ENV: production
+
+## Estrutura Esperada Após Build:
+```
+dist/
+├── index.js          # Arquivo principal
+├── index.d.ts        # Definições TypeScript
+├── routes/           # Rotas compiladas
+├── middleware/       # Middlewares compilados
+└── schemas/          # Schemas compilados
+```
+
+## Troubleshooting:
+1. Se o build falhar, verifique os logs do Render.com
+2. Certifique-se de que DATABASE_URL está configurada
+3. Verifique se o banco PostgreSQL está acessível
+4. O arquivo dist/index.js deve existir após o build

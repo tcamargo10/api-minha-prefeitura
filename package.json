@@ -5,7 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
-    "build": "chmod +x render-build.sh && ./render-build.sh",
+    "build": "tsc",
+    "build:with-prisma": "prisma generate && tsc",
+    "build:render": "chmod +x render-build.sh && ./render-build.sh",
     "build:local": "prisma generate && tsc",
     "start": "node dist/index.js",
     "postinstall": "prisma generate",

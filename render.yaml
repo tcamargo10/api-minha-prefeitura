@@ -2,7 +2,7 @@ services:
   - type: web
     name: api-minha-prefeitura
     runtime: node
-    buildCommand: npm run build
+    buildCommand: npm install && npm run build:with-prisma
     startCommand: npm start
     envVars:
       - key: NODE_ENV
